@@ -2,11 +2,24 @@ package main
 
 import (
 	"bytes"
-	"github.com/labstack/echo/v4"
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"html/template"
+	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/labstack/echo/v4"
+	_ "github.com/lib/pq"
 )
+
+type Config struct {
+	DBUser string `json:"db_user"`
+	DBPass string `json:"db_pass"`
+	DBUri  string `json:"db_uri"`
+	DBName string `json:"db_name"`
+}
 
 type Ping struct {
 	Now int64 `json:"now"`
@@ -27,6 +40,25 @@ type Capacitor struct {
 func main() {
 	e := echo.New()
 
+	var config Config
+	f, err := ioutil.ReadFile("config.json")
+	if err != nil {
+		e.Logger.Fatal(err)
+	}
+	json.Unmarshal(f, &config)
+
+	conn := fmt.Sprintf(
+		"postgresql://%s:%s@%s/%s?sslmode=disable",
+		config.DBUser,
+		config.DBPass,
+		config.DBUri,
+		config.DBName,
+	)
+	db, err := sql.Open("postgres", conn)
+	if err != nil {
+		e.Logger.Fatal(err)
+	}
+
 	// Utility and index endpoints
 	e.GET("/ping", ping).Name = "ping"
 	e.GET("/", func(c echo.Context) error {
@@ -43,10 +75,20 @@ func main() {
 	}).Name = "index"
 
 	// Resistor endpoints
-	e.GET("/api/v1/resistors", listResistors).Name = "api.v1.resistors"
+	e.GET("/api/v1/resistors", func(c echo.Context) error {
+		return listResistors(c, db)
+	}).Name = "api.v1.resistors"
+	e.POST("/api/v1/resistors", func(c echo.Context) error {
+		return addResistors(c, db)
+	}).Name = "api.v1.add-resistors"
 
 	// Capacitor endpoints
-	e.GET("/api/v1/capacitors", listCapacitors).Name = "api.v1.capacitors"
+	e.GET("/api/v1/capacitors", func(c echo.Context) error {
+		return listCapacitors(c, db)
+	}).Name = "api.v1.capacitors"
+	e.POST("/api/v1/capacitors", func(c echo.Context) error {
+		return addCapacitors(c, db)
+	}).Name = "api.v1.add-capacitors"
 
 	e.Logger.Fatal(e.Start(":1323"))
 }
@@ -72,43 +114,96 @@ func ping(c echo.Context) error {
 	return c.JSON(http.StatusOK, p)
 }
 
-func listResistors(c echo.Context) error {
-	// TODO Eventually get this from a database.
-	resistors := []Resistor{
-		Resistor{
-			Value: "100k",
-			Type:  "metal-film",
-			Count: 100,
-		},
-		Resistor{
-			Value: "1M",
-			Type:  "metal-film",
-			Count: 100,
-		},
+func listResistors(c echo.Context, db *sql.DB) error {
+	rows, err := db.Query("SELECT value, type, count FROM resistors")
+	if err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
 	}
+
+	var resistors []Resistor
+	var value string
+	var type_ string
+	var count int64
+	var resistor *Resistor
+	for rows.Next() {
+		rows.Scan(&value, &type_, &count)
+		resistor = new(Resistor)
+		resistor.Value = value
+		resistor.Type = type_
+		resistor.Count = count
+		resistors = append(resistors, *resistor)
+	}
+	rows.Close()
 
 	return c.JSON(http.StatusOK, resistors)
 }
 
-func listCapacitors(c echo.Context) error {
-	// TODO Eventually get this from a database.
-	capacitors := []Capacitor{
-		Capacitor{
-			Value: "10nF",
-			Type:  "ceramic",
-			Count: 20,
-		},
-		Capacitor{
-			Value: "22nF",
-			Type:  "film",
-			Count: 15,
-		},
-		Capacitor{
-			Value: "47nF",
-			Type:  "film",
-			Count: 15,
-		},
+func addResistors(c echo.Context, db *sql.DB) error {
+	resistor := new(Resistor)
+	if err := c.Bind(resistor); err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
 	}
 
+	stmt, err := db.Prepare("INSERT INTO resistors (value, type, count) VALUES (($1) , ($2) , ($3))")
+	if err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(resistor.Value, resistor.Type, resistor.Count); err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
+	}
+
+	return c.JSON(http.StatusCreated, resistor)
+}
+
+func listCapacitors(c echo.Context, db *sql.DB) error {
+	rows, err := db.Query("SELECT value, type, count FROM capacitors")
+	if err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
+	}
+
+	var capacitors []Capacitor
+	var value string
+	var type_ string
+	var count int64
+	var capacitor *Capacitor
+	for rows.Next() {
+		rows.Scan(&value, &type_, &count)
+		capacitor = new(Capacitor)
+		capacitor.Value = value
+		capacitor.Type = type_
+		capacitor.Count = count
+		capacitors = append(capacitors, *capacitor)
+	}
+	rows.Close()
+
 	return c.JSON(http.StatusOK, capacitors)
+}
+
+func addCapacitors(c echo.Context, db *sql.DB) error {
+	capacitor := new(Capacitor)
+	if err := c.Bind(capacitor); err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
+	}
+
+	stmt, err := db.Prepare("INSERT INTO capacitors (value, type, count) VALUES (($1) , ($2) , ($3))")
+	if err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.Exec(capacitor.Value, capacitor.Type, capacitor.Count); err != nil {
+		c.Echo().Logger.Fatal(err)
+		return err
+	}
+
+	return c.JSON(http.StatusCreated, capacitor)
 }
