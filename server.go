@@ -14,6 +14,7 @@ type Ping struct {
 
 type Resistor struct {
 	Value string `json:"value"`
+	Type  string `json:"type"`
 	Count int64  `json:"count"`
 }
 
@@ -44,6 +45,9 @@ func main() {
 	// Resistor endpoints
 	e.GET("/api/v1/resistors", listResistors).Name = "api.v1.resistors"
 
+	// Capacitor endpoints
+	e.GET("/api/v1/capacitors", listCapacitors).Name = "api.v1.capacitors"
+
 	e.Logger.Fatal(e.Start(":1323"))
 }
 
@@ -73,13 +77,38 @@ func listResistors(c echo.Context) error {
 	resistors := []Resistor{
 		Resistor{
 			Value: "100k",
+			Type:  "metal-film",
 			Count: 100,
 		},
 		Resistor{
 			Value: "1M",
+			Type:  "metal-film",
 			Count: 100,
 		},
 	}
 
 	return c.JSON(http.StatusOK, resistors)
+}
+
+func listCapacitors(c echo.Context) error {
+	// TODO Eventually get this from a database.
+	capacitors := []Capacitor{
+		Capacitor{
+			Value: "10nF",
+			Type:  "ceramic",
+			Count: 20,
+		},
+		Capacitor{
+			Value: "22nF",
+			Type:  "film",
+			Count: 15,
+		},
+		Capacitor{
+			Value: "47nF",
+			Type:  "film",
+			Count: 15,
+		},
+	}
+
+	return c.JSON(http.StatusOK, capacitors)
 }
