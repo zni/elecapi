@@ -1,0 +1,14 @@
+<html>
+    <body>
+        <h2>Endpoints</h2>
+        <ul>
+        {{ range . }}
+            <li>{{ .Path }}</li>
+            <ul>
+                <li>{{ .Method }}</li>
+                <li>{{ .Name }}</li>
+            </ul>
+        {{ end }}
+        </ul>
+    </body>
+</html>
